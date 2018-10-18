@@ -3,7 +3,35 @@ import os
 from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 import threading
+from queue import Queue
 from pprint import pprint
+
+
+class Chapter(object):
+    content = None
+
+    def __init__(self, title, index, url):
+        self.title = title
+        self.index = index
+        self.url = url
+        pass
+
+    def get(self):
+        requests.adapters.DEFAULT_RETRIES = 5
+        s = requests.session()
+        s.keep_alive = False
+        res = s.get(self.url)
+        if res.status_code != 200:
+            raise Exception('{}下载错误。'.format(self.title))
+        soup = BeautifulSoup(res.content, 'html.parser')
+        article = soup.find(id='content').get_text()
+        article = article.replace('\xa0\xa0\xa0\xa0', '\n\n')
+        self.content = article
+
+    def success_download(self):
+        if self.content is None:
+            return False
+        return True
 
 
 class Ebook(object):
@@ -15,9 +43,11 @@ class Ebook(object):
     __description = None
 
     __chapter_index = []
+    __chapters = []
 
     def __init__(self, url):
         self.__url = url
+        self.__chapter_queue = Queue()
         self.__parse()
 
     def __parse(self):
@@ -34,11 +64,19 @@ class Ebook(object):
         self.__author = main_info.find_all('p')[0].get_text()
         self.__author = self.__author.split('：')[1].strip()
         title_list = soup.find(id='list')
+        index = 0
         for title in title_list.find_all('a'):
-            self.__chapter_index.append({
-                'name': title.get_text(),
-                'url': self.__source + title['href']
-            })
+            self.__chapters.append(
+                Chapter(
+                    title=title.get_text(),
+                    index=index,
+                    url=(self.__source + title['href'])
+                )
+            )
+            # self.__chapter_index.append({
+            #     'name': title.get_text(),
+            #     'url': self.__source + title['href']
+            # })
 
     def __create_ebook(self):
         if not self.__title:
@@ -55,49 +93,57 @@ class Ebook(object):
         with open('{}/cover.jpg'.format(dir_name), 'wb') as f:
             f.write(img.content)
         
-    def __downloads(self, start, end):
-        indexes = range(start, end+1)
-        for i in indexes:
-            chapter = self.__chapter_index[i]
-            print('正在下载：{}'.format(chapter['name']))
-            res = requests.get(chapter['url'])
-            if res.status_code != 200:
-                print('{}下载错误。'.format(chapter['name']))
-            soup = BeautifulSoup(res.content, 'html.parser')
-            article = soup.find(id='content').get_text()
-            article = article.replace('\xa0\xa0\xa0\xa0', '\n\n')
-            self.__chapter_index[i]['content'] = article
+    # def __downloads(self, start, end):
+    #     indexes = range(start, end+1)
+    #     for i in indexes:
+    #         chapter = self.__chapter_index[i]
+    #         print('正在下载：{}'.format(chapter['name']))
+    #         res = requests.get(chapter['url'])
+    #         if res.status_code != 200:
+    #             print('{}下载错误。'.format(chapter['name']))
+    #         soup = BeautifulSoup(res.content, 'html.parser')
+    #         article = soup.find(id='content').get_text()
+    #         article = article.replace('\xa0\xa0\xa0\xa0', '\n\n')
+    #         self.__chapter_index[i]['content'] = article
     
     def send_to_kindle(self, kindle_receive_address):
         pass
-        
 
-    def run(self):
-        self.__create_ebook()
-
-        print('正在下载《{}》，{}'.format(self.__title, self.__author))
-        thread_list = []
-        keys = []
-        for index, chapter in enumerate(self.__chapter_index):
-            keys.append(index)
-            if len(keys) >= 20:
-                t = threading.Thread(target=self.__downloads, args=(keys[0], keys[-1]))
-                t.start()
-                thread_list.append(t)
-                keys = []
-
-        # 不满20的keys
-        t = threading.Thread(target=self.__downloads, args=(keys[0], keys[-1]))
-        t.start()
-        thread_list.append(t)
-
-        for tread in thread_list:
-            tread.join()
-
-        for article in self.__chapter_index:
-            if 'content' not in article.keys():
-                print(article)
+    def __fetch(self):
+        while not self.__chapter_queue.empty():
+            try:
+                chapter = self.__chapter_queue.get()
+                print('正在下载：' + chapter.title)
+                chapter.get()
+                if not chapter.success_download():
+                    self.__chapter_queue.put(chapter)
+            except Exception as e:
+                print('下载异常：', e)
+                self.__chapter_queue.put(chapter)
                 continue
-            self.__file.write('## ' + article['name'])
+           
+    def run(self):
+        for c in self.__chapters:
+            self.__chapter_queue.put(c)
+        
+        threads = [threading.Thread(target=self.__fetch) for i in range(50)]
+        for t in threads:
+            t.start()
+        
+        for t in threads:
+            if t.is_alive():
+                t.join()
+
+        self.__create_ebook()
+        self.__file.write('# ' + self.__title)
+        self.__file.write('\n')
+        self.__file.write('作者：' + self.__author)
+        self.__file.write('\n\n')
+        for c in self.__chapters:
+            if not c.success_download():
+                print('下载失败：%s' % c.title)
+                continue
+            self.__file.write('## ' + c.title)
             self.__file.write('\n')
-            self.__file.write(article['content'] + '\n\n')
+            self.__file.write(c.content)
+            self.__file.write('\n\n')
