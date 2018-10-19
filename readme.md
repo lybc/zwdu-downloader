@@ -4,7 +4,7 @@
 抓取小说和封面生成预排版的TXT文件，可手动导入Calibre生成对应的mobi或Epub格式并导入kindle
 
 	
-<script id="asciicast-LbqDiZrgo4fE786Ov2F7BIVfb" src="https://asciinema.org/a/LbqDiZrgo4fE786Ov2F7BIVfb.js" async></script>
+[![asciicast](https://asciinema.org/a/LbqDiZrgo4fE786Ov2F7BIVfb.png)](https://asciinema.org/a/LbqDiZrgo4fE786Ov2F7BIVfb)
 
 ## 依赖
 - python3
