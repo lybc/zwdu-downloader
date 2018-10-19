@@ -8,6 +8,10 @@ from pprint import pprint
 
 
 class Chapter(object):
+    '''章节类
+    存储小说章节
+    '''
+
     content = None
 
     def __init__(self, title, index, url):
@@ -17,6 +21,12 @@ class Chapter(object):
         pass
 
     def get(self):
+        '''下载小说章节的逻辑
+        
+        Raises:
+            Exception -- 下载失败异常
+        '''
+
         requests.adapters.DEFAULT_RETRIES = 5
         s = requests.session()
         s.keep_alive = False
@@ -51,6 +61,12 @@ class Ebook(object):
         self.__parse()
 
     def __parse(self):
+        '''解析小说元数据（书名，作者，章节等）
+        
+        Raises:
+            Exception -- 解析失败异常
+        '''
+
         res = requests.get(self.__url)
         if res.status_code != 200:
             raise Exception('Can not connect url')
@@ -73,12 +89,11 @@ class Ebook(object):
                     url=(self.__source + title['href'])
                 )
             )
-            # self.__chapter_index.append({
-            #     'name': title.get_text(),
-            #     'url': self.__source + title['href']
-            # })
 
     def __create_ebook(self):
+        '''创建电子书文件(txt)
+        '''
+
         if not self.__title:
             raise Exception('无法解析书名')
         if not self.__author:
@@ -92,20 +107,7 @@ class Ebook(object):
         self.__file = open('{}/{}.txt'.format(dir_name, self.__title), 'w')
         with open('{}/cover.jpg'.format(dir_name), 'wb') as f:
             f.write(img.content)
-        
-    # def __downloads(self, start, end):
-    #     indexes = range(start, end+1)
-    #     for i in indexes:
-    #         chapter = self.__chapter_index[i]
-    #         print('正在下载：{}'.format(chapter['name']))
-    #         res = requests.get(chapter['url'])
-    #         if res.status_code != 200:
-    #             print('{}下载错误。'.format(chapter['name']))
-    #         soup = BeautifulSoup(res.content, 'html.parser')
-    #         article = soup.find(id='content').get_text()
-    #         article = article.replace('\xa0\xa0\xa0\xa0', '\n\n')
-    #         self.__chapter_index[i]['content'] = article
-    
+
     def send_to_kindle(self, kindle_receive_address):
         pass
 
@@ -121,15 +123,18 @@ class Ebook(object):
                 print('下载异常：', e)
                 self.__chapter_queue.put(chapter)
                 continue
-           
+
     def run(self):
+        '''入口
+        '''
+
         for c in self.__chapters:
             self.__chapter_queue.put(c)
-        
+
         threads = [threading.Thread(target=self.__fetch) for i in range(50)]
         for t in threads:
             t.start()
-        
+
         for t in threads:
             if t.is_alive():
                 t.join()
